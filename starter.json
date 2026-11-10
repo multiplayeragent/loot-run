@@ -1,0 +1,23 @@
+{
+  "name": "Loot Run",
+  "genre": "rpg",
+  "dim": "3D",
+  "mode": "Co-op",
+  "players": "1–4",
+  "hook": "Clear the floor, grab the shiny loot, go deeper.",
+  "how": "Fight through every room of a dungeon floor with your party. Monsters drop gear in five rarities, kills level the whole party up, and when the floor is clear the stairs open to a harder one. If everyone goes down, the run ends.",
+  "controls": "WASD to move, aim with the mouse, click or Space to swing, E to spin; on touch, a thumb stick, ATTACK and SPIN",
+  "uses": [
+    ["Saves", "Your deepest floor and your total runs and kills are saved for next time."],
+    ["Leaderboard", "The deepest floor each player reached."],
+    ["Host-run rules", "The host's browser runs the monsters, the loot drops and who picked up what; if it leaves, the next player takes over."],
+    ["Bots", "AI heroes fill the party until enough people join."],
+    ["Live sync", "Everyone sees the same dungeon, monsters, swings and loot as they happen."],
+    ["Live ops", "Run a loot event (more drops) without touching the code."]
+  ],
+  "ideas": [
+    "Add a mage class that throws fireballs",
+    "Add a shop between floors to spend gold",
+    "Make the loot beams bigger and add a sound for legendaries"
+  ]
+}
