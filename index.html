@@ -220,7 +220,8 @@ function livePlayers() {
   }
   return out.sort();
 }
-const isHost = () => livePlayers()[0] === net.sessionId;
+let wakeHold = 0, lastFrameAt = 0; // a tab whose frames stopped (frozen, or in the background) doesn't act as host, nor for 700ms after it wakes (see frame())
+const isHost = () => livePlayers()[0] === net.sessionId && performance.now() >= wakeHold && !(lastFrameAt && performance.now() - lastFrameAt > 1000);
 /** A live-ops number (owners change it without code), else the CONFIG default. */
 const liveNum = (key) => { const v = Number(net && net.live && net.live.config ? net.live.config[key] : NaN); return Number.isFinite(v) ? v : CONFIG[key]; };
 
@@ -800,7 +801,7 @@ function hostTick(dt, now) {
   if (f.phase === "over" && t >= f.endsAt) startFloor(1, f.id + 1, true);
   botsTick(dt, host.f);
   const F = host.f;
-  if (host.dirtyF && now - host.lastF > 150) { host.dirtyF = false; host.lastF = now; F.v++; net.setShared("floor", JSON.stringify(F)); }
+  if (host.dirtyF && now - host.lastF > 150) { host.dirtyF = false; host.lastF = now; F.v = Math.max(F.v, parseOnce("floor", S.shared.floor, null)?.v || 0) + 1; net.setShared("floor", JSON.stringify(F)); }
   if (host.dirtyL) { host.dirtyL = false; net.setShared("loot", JSON.stringify(host.loot.map((l) => [l.i, l.k, l.r, l.p, l.x, l.z]))); }
   if (now - host.lastM > 100) { host.lastM = now; net.setShared("mobs", JSON.stringify(host.mobs.map((m) => [m.i, m.t, +m.x.toFixed(1), +m.z.toFixed(1), Math.ceil(m.hp), +m.a.toFixed(1), m.aw]))); }
   if (now - host.lastB > 100) { host.lastB = now; net.setShared("bots", JSON.stringify([...host.bots.values()].map((b) => ({ i: b.id, n: b.name, c: b.color, x: +b.x.toFixed(2), z: +b.z.toFixed(2), a: +b.a.toFixed(2), hp: Math.max(0, Math.round(b.hp)), mhp: b.mhp, dn: b.dn, rv: +(b.rv || 0).toFixed(2), sw: b.sw, wh: b.wh, w: b.w, ar: b.ar, fl: b.fl })))); }
@@ -1107,6 +1108,8 @@ let last = performance.now(), lastHb = 0, lastHud = 0;
 const focus = new THREE.Vector3(), camOff = new THREE.Vector3();
 function frame(now) {
   requestAnimationFrame(frame);
+  const realNow = performance.now(); // timed on the real clock: after a long freeze the rAF time can be from before the wake
+  if (lastFrameAt && realNow - lastFrameAt > 1000) { wakeHold = realNow + 700; host.acting = false; } lastFrameAt = realNow; // woke from a freeze or a background tab: another player may have run the dungeon meanwhile, so let their state arrive, then adopt it like a new host
   const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now;
   const t = now / 1000;
   if (now - lastHb > 1000) { lastHb = now; net.me.set("hb", Date.now()); fixColor(); }
