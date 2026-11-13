@@ -133,6 +133,7 @@ const CONFIG = {
   aggro: 9,              // monsters wake when a hero this close can see them (and wake their room)
   reviveRange: 2,        // stand this close to a downed friend ...
   reviveTime: 2.5,       // ... for this many seconds to get them back up
+  elbow: 1.2,            // AI heroes keep this far from every other hero (they never stand inside each other)
   descendMs: 2500,       // the walk down the stairs
   resultsMs: 15000,      // the results show this long, then a new run starts
   dropChance: 0.45,      // chance a monster drops loot (live ops can change it)
@@ -528,7 +529,7 @@ function stepBits(dt) {
   for (const [m, c] of [[bitMesh, n], [puffMesh, np]]) { m.count = c; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
 }
 // Arrows: flown by the host (they count) and, for show, on every other screen.
-const arrows = [], ARROW_GEO = new THREE.BoxGeometry(0.06, 0.06, 0.8), arrowMat = std("#d9c08a");
+const arrows = [], ARROW_GEO = new THREE.BoxGeometry(0.14, 0.14, 1.3), arrowMat = new THREE.MeshBasicMaterial({ color: "#fff0b8" }); // chunky and unlit: a thin, shaded arrow can't be seen from up here
 function shootArrow(x, z, a, counts) {
   const m = mesh(ARROW_GEO, arrowMat, x, 1.1, z); m.rotation.y = a; scene.add(m);
   arrows.push({ x, z, vx: Math.sin(a) * 13, vz: Math.cos(a) * 13, life: 1.2, m, counts });
@@ -740,10 +741,15 @@ function fitBots() {
       dn: 0, rv: 0, sw: 0, wh: 0, w: [...START_GEAR.w], ar: [...START_GEAR.ar], fl: host.f.id, bot: true, cd: 0, scd: 0 });
   }
 }
-/** What an AI hero (or the preview's autopilot) wants: revive a friend, fight, grab loot, follow a person, else clear the floor and take the stairs. */
+/** What an AI hero (or the preview's autopilot) wants: get out of a boss slam, revive a friend, fight, grab loot, follow a person, else clear the floor and take the stairs. */
 function brain(a, leader, f) {
-  const friend = team.find((h) => h.dn && h.id !== a.id && h.fl === f.id && Math.hypot(h.x - a.x, h.z - a.z) < 14);
-  if (friend) return { x: friend.x, z: friend.z, near: 0.9 };
+  // step out of the Bone King's red circle (after a moment to notice it; from the middle there is no time to get out)
+  const slam = slams.find((s) => s.t > 0.25 && Math.hypot(a.x - s.x, a.z - s.z) < s.r + 0.5);
+  if (slam) return { x: a.x + (a.x - slam.x) * 4, z: a.z + (a.z - slam.z) * 4, near: 0.1 };
+  // a downed friend comes first: one close by right away, one far away as soon as no monster is on us
+  let friend = null, fr = 1e9;
+  for (const h of team) { const d = Math.hypot(h.x - a.x, h.z - a.z); if (h.dn && h.id !== a.id && h.fl === f.id && d < fr) { fr = d; friend = h; } }
+  if (friend && (fr < 14 || !mobList().some((m) => m.aw && Math.hypot(m.x - a.x, m.z - a.z) < 8))) return { x: friend.x, z: friend.z, near: 0.9 };
   let foe = null, fd = leader ? 10 : 1e9, best = fd;
   for (const m of mobList()) { // with a leader: only fights nearby; alone: awake monsters first, then the nearest anywhere
     const d = Math.hypot(m.x - a.x, m.z - a.z), score = d + (m.aw ? 0 : 12);
@@ -755,25 +761,40 @@ function brain(a, leader, f) {
   if (leader) return { x: leader.x, z: leader.z, near: 2.5 };
   const s = stairsAt(); return { x: s.x, z: s.z, near: 0.3, stairs: true };
 }
+/** AI heroes don't stand inside another hero: step off anyone closer than CONFIG.elbow (a downed friend being revived is fine). */
+function spread(b, k, dt) {
+  for (const o of team) {
+    if (o.id === b.id || o.dn || o.fl !== b.fl) continue;
+    let sx = b.x - o.x, sz = b.z - o.z, sd = Math.hypot(sx, sz);
+    if (sd >= CONFIG.elbow) continue;
+    if (sd < 0.05) { sx = Math.sin(k * 2.1); sz = Math.cos(k * 2.1); sd = 1; } // on the very same spot: each picks its own way out
+    const push = Math.min(CONFIG.elbow - sd, 4 * dt);
+    moveBody(b, (sx / sd) * push, (sz / sd) * push, 0.4);
+  }
+}
 function botsTick(dt, f) {
   const leader = team.find((h) => !h.bot && !h.dn && h.fl === f.id && !(ATTRACT && h.id === net.sessionId));
+  let k = 0;
   for (const b of host.bots.values()) {
-    b.mhp = heroHp(level(f.xp), b.ar); b.fl = f.id;
+    b.mhp = heroHp(level(f.xp), b.ar); b.fl = f.id; k++;
     if (b.dn) { reviveTick(b, dt); continue; }
     if (f.phase !== "play") continue;
-    const goal = brain(b, leader, f);
-    if (walkTo(b, goal.x, goal.z, CONFIG.speed * 0.85, dt, 0.4, goal.near) > goal.near && !goal.attack) b.a = Math.atan2(goal.x - b.x, goal.z - b.z);
+    const goal = brain(b, leader, f), far = Math.hypot(goal.x - b.x, goal.z - b.z) > 5; // a little slower than a person up close, a little faster when left behind
+    if (walkTo(b, goal.x, goal.z, CONFIG.speed * (far ? 1.05 : 0.85), dt, 0.4, goal.near) > goal.near && !goal.attack) b.a = Math.atan2(goal.x - b.x, goal.z - b.z);
+    spread(b, k, dt);
     b.cd -= dt; b.scd -= dt;
     if (goal.attack && goal.crowd >= 3 && b.scd <= 0) { b.scd = CONFIG.spinEvery * 1.4; b.wh++; for (const m of inReach(b, true)) applyHit({ m: m.i, d: heroDmg(level(f.xp), b.w) * 1.5, s: 1 }, b.id); }
     else if (goal.attack && b.cd <= 0) { b.cd = CONFIG.swingEvery * 1.5; b.sw++; for (const m of inReach(b, false)) applyHit({ m: m.i, d: heroDmg(level(f.xp), b.w) }, b.id); }
     for (const it of host.loot) if (Math.hypot(it.x - b.x, it.z - b.z) < 1.1 && wants(b, it)) { applyPick({ i: it.i }, b.id); break; }
   }
 }
-/** Would this AI hero take the item? Only an upgrade (or a potion when hurt), and only if no person is closer to it. */
+/** Would this AI hero take the item? An upgrade, a potion when hurt, or worse gear to salvage for health when hurt
+ *  (unless a person could wear it), and only if no person is closer to it. */
 function wants(a, l) {
-  if (!a.bot && !ATTRACT) return false;
-  const useful = l.k === 2 ? a.hp < a.mhp * 0.7 : l.p > a[l.k === 0 ? "w" : "ar"][1], d = Math.hypot(l.x - a.x, l.z - a.z);
-  return useful && !team.some((h) => !h.bot && h !== a && !h.dn && Math.hypot(h.x - l.x, h.z - l.z) < d);
+  if (!a.bot) return ATTRACT; // the preview's autopilot grabs everything, like a person does
+  const slot = l.k === 0 ? "w" : "ar", d = Math.hypot(l.x - a.x, l.z - a.z), people = team.filter((h) => !h.bot && h !== a && !h.dn);
+  const useful = l.k === 2 ? a.hp < a.mhp * 0.7 : l.p > a[slot][1] || (a.hp <= a.mhp - 10 && !people.some((h) => l.p > h[slot][1]));
+  return useful && !people.some((h) => Math.hypot(h.x - l.x, h.z - l.z) < d);
 }
 /** Monsters a swing (an arc in front) or a spin (all around) reaches. */
 function inReach(h, all) {
@@ -1060,7 +1081,7 @@ const keys = new Set(), cv = renderer.domElement, touchUI = matchMedia("(pointer
 const MOVE = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
 addEventListener("keydown", (e) => { const k = e.key.toLowerCase(); if (MOVE[k] || k === " ") e.preventDefault(); keys.add(k); });
 addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
-addEventListener("blur", () => { keys.clear(); mouse.down = false; });
+addEventListener("blur", () => { keys.clear(); mouse.down = mouse.right = false; });
 for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, () => { try { audio ||= new AudioContext(); } catch {} }, { once: true });
 const mouse = { x: 0, y: 0, seen: false, down: false, right: false }, aim = { active: false, a: 0 };
 const stick = { id: null, x0: 0, y0: 0, dx: 0, dy: 0 }, stickEl = $("stick");
