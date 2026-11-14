@@ -40,6 +40,7 @@
   .card h2 { margin: 0; font-size: 25px; color: #ffcf5c; } .card h3 { margin: 14px 0 4px; font-size: 13px; color: #c4a8ff; text-align: left; }
   .card p { margin: 6px 0; font-size: 14px; opacity: .85; }
   .card ol { margin: 0; padding-left: 24px; font-size: 14px; text-align: left; } .card li span { float: right; font-variant-numeric: tabular-nums; }
+  .card li.note { list-style: none; margin-left: -24px; } /* a status line, not a numbered entry */
   button.go { width: 100%; min-height: 48px; margin-top: 14px; border: 0; border-radius: 12px; background: #ffcf5c; color: #2a1a00; font: 800 17px system-ui, sans-serif; cursor: pointer; }
   .pad { position: fixed; border-radius: 50%; border: 2px solid #ffffff66; background: #ffffff1c; color: #fff; font: 800 14px system-ui, sans-serif; touch-action: none; }
   #atk { right: max(20px, env(safe-area-inset-right)); bottom: max(26px, env(safe-area-inset-bottom)); width: 92px; height: 92px; }
@@ -73,7 +74,7 @@
 <button class="pad" id="spin" hidden>SPIN</button>
 <div id="over" hidden><div class="card">
   <h2 id="overTitle"></h2><p id="overSub"></p>
-  <h3>Deepest floors</h3><ol id="board"><li>Loading…</li></ol>
+  <h3>Deepest floors</h3><ol id="board"><li class="note">Loading…</li></ol>
   <button class="go" id="again">Play again</button><p id="overNext"></p>
 </div></div>
 <script type="module">
@@ -1058,11 +1059,11 @@ function hud(f) {
 }
 function showBoard(n) {
   const list = $("board");
-  if (!board) { list.innerHTML = "<li>Leaderboards need a connection.</li>"; return; }
-  list.innerHTML = "<li>Loading…</li>";
+  if (!board) { list.innerHTML = "<li class='note'>Leaderboards need a connection.</li>"; return; }
+  list.innerHTML = "<li class='note'>Loading…</li>";
   board.submit(n).catch(() => null).then(() => board.top(10)).then(({ entries }) => {
-    list.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>floor ${e.score}</span></li>`).join("") : "<li>No runs yet. Set the first.</li>";
-  }).catch(() => { list.innerHTML = "<li>Couldn't load the leaderboard.</li>"; });
+    list.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>floor ${e.score}</span></li>`).join("") : "<li class='note'>No runs yet. Set the first.</li>";
+  }).catch(() => { list.innerHTML = "<li class='note'>Couldn't load the leaderboard.</li>"; });
 }
 const mini = $("mini").getContext("2d");
 function drawMini(f) {
